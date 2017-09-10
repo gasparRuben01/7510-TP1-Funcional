@@ -13,7 +13,7 @@
 
 (deftest database-easy-test
   (testing "coso"
-    (is (= (evaluate-query database-easy "fact1(c1,c2,c3)")))))
+    (is (= (evaluate-query database-easy "fact1(c1,c2,c3)") true))))
 
 (deftest database-only-facts-test
   (testing "fact1(c1, c2, c3) deberia ser cierto"

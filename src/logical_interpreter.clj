@@ -1,105 +1,132 @@
 (ns logical-interpreter
   (:require [preposition :refer :all]
-            [rule :refer :all]))
+            [rule :refer :all]
+            [clojure.string :refer [replace-first]]
+            [bool :refer :all]))
+
 
 (defn evaluate-query
   "Returns true if the rules and facts in database imply query, false if not. If
   either input can't be parsed, returns nil"
   [database query]
   (let 
-    [pattern-name #"^\s*([^\(,.\s]+)\s*\("         
+    [prepositions (atom nil)
+     consulta (atom nil)
+     pattern-name #"^\s*([^\(,.\s]+)\s*\("         
      pattern-no-last-variable #"^\s*([^,\s\)]+)\s*,"
      pattern-last-variable #"^\s*([^,\s\)]+)\s*\)"
      pattern-rule? #"^\s*:-"
      pattern-end #"^\s*.\s*"
-     get-name (fn
-                [string]
-                (let
-                  [match-name (re-find (re-matcher patter-name string))]
-                  :
+     first-token (fn [pattern string]
+                   (if (re-find (re-matcher pattern string))
+                     (get (re-find (re-matcher pattern string) 1))
+                     nil))
+
+     delete-first-match (fn [pattern string] (replace-first string pattern ""))
+
+     get-name (fn [string] (first-token pattern-name string))
+     delete-name (fn [string] (delete-first-match pattern-name string))
+     
+     get-no-last-var (fn [string] (first-token pattern-no-last-variable string))
+     delete-no-last-var (fn [string] (delete-first-match pattern-no-last-variable string))
+
+     get-last-var (fn [string] (first-token pattern-last-variable string))
+     delete-last-var (fn [string] (delete-first-match pattern-last-variable string))
+
+     get-end (fn [string] (first-token pattern-end string))
+     delete-end (fn [string] (first-token pattern-end string))
+
+     rule? (fn [string] (first-token pattern-rule? string))
+     delete-rule-symbol (fn [string] (delete-first-match pattern-rule? string))
+
+     parse-rule (fn [x] nil)
+
+     parse-vars (fn [string add-var]
+                  (let
+                    [buffer (atom string)
+                     var-name (atom nil)]
+                    (swap! var-name get-no-last-var @buffer)
+                    (while @var-name
+                      (add-var @var-name)
+                      (swap! buffer delete-no-last-var)
+                      (swap! var-name get-no-last-var @buffer))
+                    
+                    (swap! var-name get-last-var @buffer)
+                    (when (not @var-name) (throw (Exception.)))
+                    (add-var @var-name)
+                    (swap! buffer delete-last-var)
+                    @buffer))
+
 
 
 
      parse-database (fn
-                      [string]
-                      (let
-                         function-string (atom nil)
-                         preposition (atom (map->Preposition :name nil :facts #{} :rule nil))
-                         pos (atom -1)
-                         variables (atom {})
-                         prepositions (atom {})
+                       [database]
+                       (let
+                         [string (atom database)
+                          prepositions (atom {})
+                          continue-bucle (atom true)
+                          vars (atom {})]
 
-                        end (fn [string]
-                              (let
-                                [match (re-find (re-matcher pattern-end string))
-                                 token 0
-                                 rest-string (atom nil)]
+                         (while @continue-bucle
+                          (let
+                           [preposition (atom nil)
+                            prep-name (get-name @string)]
 
-                                (if match
-                                  (do
-                                    (swap! prepositions (fn [x] (assoc x (:name @preposition) @preposition)))
-                                    (swap! pos (fn [x] -1))
-                                    (swap! rest-string (fn [x] (replace-first x (get match token ""))))
-                                    (if (= @rest-string "")
-                                      nil
-                                      [set-preposition-name @rest-string]))
-                                  (do (swap! prepositions (fn [x] {})) nil))))
-                         
-                         rule? (fn [string]
-                                 (let
-                                   [match (re-find (re-matcher pattern-rule? string))
-                                    fact (atom [])]
+                            (print "----" prep-name) 
 
-                                   (if match
-                                     nil
-                                     (do
-                                       (doseq [x @variables] (swap! fact (fn [y] (conj y (get x 0)))))
-                                       (swap! preposition (fn [x] (map->Preposition {:name (.name x) :rule (.rule x) :facts (assoc (.facts x) @vars)})))
-                                       [end string])))
+                           (if (prep-name) 
+                             (if (contains? @prepositions prep-name)
+                               (swap! preposition (fn [x] (get @prepositions prep-name)))
+                               (swap! preposition (fn [x] (map->Preposition { :name prep-name }))))
+                             (throw (Exception.)))
+                           (swap! string delete-name) 
 
-                        add-last-variable (fn [string]
-                                            (let
-                                              [match (re-find (re-matcher pattern-last-variable string))
-                                               token 0
-                                               variable 1]
-                                              (if
-                                                (cond
-                                                  (= match nil) nil
-                                                  :else (swap! variables (fn [x] (assoc x  (get match variable) (swap! pos inc)))))
-                                                [rule? (replace-first string (get match token) "")]
-                                                (do (swap! prepositions (fn [x] {})) nil))))
+                            (let
+                               [pos (atom -1)
+                                add-var (fn [var-name] 
+                                          (if (contains? @vars var-name)
+                                            (swap! vars (fn [v] (assoc v var-name (conj (get v var-name) (swap! pos inc)))))
+                                            (swap! vars assoc var-name [(swap! pos inc)])))]
+                              (swap! string parse-vars add-var))
 
-                         add-variable (fn [string]
-                                        (let
-                                          [match (re-find (re-matcher pattern-no-last-variable string))
-                                           token 0
-                                           variable 1]
-                                          (if
-                                            (cond
-                                              (= match nil) nil
-                                              :else (swap! variables (fn [x] (assoc x  (get match variable) (swap! pos inc)))))
-                                            [add-variable (replace-first string (get match token) "")]
-                                            [add-last-variable string])))
+                            (if (rule? @string)
+                              (parse-rule @string)
+                              (do
+                                  (if (get-end @string)
+                                    (do 
+                                      (let
+                                        [fact (atom [])]
+                                        (swap! string delete-end)
+                                        (swap! fact into (range (+ (reduce max (map (fn [x] (reduce max (get x 1))) @vars)) 1)))
+                                        (doseq [x @vars] (doseq [y (get x 1)] (swap! fact assoc y (get x 0))))
+                                        (swap! preposition (fn [x] 
+                                                             (map->Preposition {:name (.name x)
+                                                                                :rule (.rule x)
+                                                                                :facts (conj (.facts x) @fact)})))
+                                        (swap! prepositions assoc (.name @preposition) @preposition)))
+                                    (throw (Exception.)))))
+                            (when (= @string "") (swap! continue-bucle (fn[x] false)))))
 
-                         set-preposition-name (fn [string]
-                                                (let
-                                                  [match (re-find (re-matcher pattern-name string))
-                                                   token 0
-                                                   prepo-name 1]
-                                                  (if
-                                                    (cond
-                                                      (= match nil) nil
-                                                      (contains? @prepositions (get match prepo-name)) (swap! prepostion (fn [x] (get @prepositions (get match prepo-name))))
-                                                      :else (swap! preposition (fn [x] (map->Preposition {:name (get match prepo-name) :facts #{} }))))
+                         @prepositions))
 
-                                                    [add-variable (replace-first string (get match token) "")]
-                                                    (do (swap! prepositions (fn [x] {}) nil)))))
+     parse-query (fn [query]
+                   (let 
+                     [buffer (atom query)
+                      query-name (get-name buffer) 
+                      query-nupla (atom nil)
+                      vars (atom [])
+                      add-vars (fn [var-name] (swap! vars conj var-name))]
 
-                        (swap! function-string (fn [x] [set-preposition-name string]))
-                        (while (boolean @function-string)
-                          (swap! function-string (fn [x] ((get x 0) (get x 1)))))
-                        @prepositions)
-     parse-query (fn [string]
-                   (let [preposition atom(nil)
-                         n-upla atom(nil)]
-                     (swap! preposition (fn [x] 
+                     (if query-name
+                       (do
+                         (swap! buffer parse-vars add-vars)
+                         [@query-name @vars])
+                       (throw (Exception.)))))]
+     (try
+       (do
+         (swap! prepositions (fn [x] (parse-database database)))
+         (swap! consulta (fn [x] (parse-query query)))
+         (bool (get prepositions (get consulta 0)) (get consulta 1)))
+       (catch Exception e nil))))
+       
