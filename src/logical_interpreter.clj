@@ -2,7 +2,8 @@
   (:require [preposition :refer :all]
             [rule :refer :all]
             [clojure.string :refer [replace-first]]
-            [bool :refer :all]))
+            [bool :refer :all]
+            [rule :refer :all]))
 
 
 (defn evaluate-query
@@ -17,6 +18,8 @@
      pattern-last-variable #"^\s*([^,\s\)\.]+)\s*\)"
      pattern-rule? #"^\s*:-"
      pattern-end #"^\s*(\.)\s*"
+     pattern-next-rule? #"^\s*,"
+
      first-token (fn [pattern string]
                    (if (re-find (re-matcher pattern string))
                      (get (re-find (re-matcher pattern string)) 1)
@@ -39,7 +42,8 @@
      rule? (fn [string] (first-token pattern-rule? string))
      delete-rule-symbol (fn [string] (delete-first-match pattern-rule? string))
 
-     parse-rule (fn [x] nil)
+     next-rule? (fn [string] (first-token pattern-next-rule? string))
+     delete-next-rule-symbol (fn [string] (delete-first-match pattern-next-rule?n string)) 
 
      parse-vars (fn [string add-var]
                   (let
@@ -57,8 +61,33 @@
                     (swap! buffer delete-last-var)
                     @buffer))
 
+     parse-rule (fn [string vars prepositions ptr-preposition]
+                  (let
+                    [buffer (atom string)
+                     rules (atom [])
+                     continue-bucle (atom true)]
+
+                    (while @continue-bucle
+                      (let
+                        [pre-name (get-name @buffer)
+                         order (atom [])
+                         add-order (fn [var-name]
+                                     (swap! order conj (get vars var-name)))]
+
+                        (when (or (not pre-name) (not (contains? prepositions pre-name)))
+                          (throw (Exception.)))
+                        (swap! buffer delete-name)
+                        (swap! buffer parse-vars add-order)
+                        (swap! rules conj (map->Rule { :preposition (get prepositions pre-name) :order @order}))
+                        (if (next-rule? @buffer)
+                          (swap! buffer delete-nex-rule-symbol)
+                          (swap! continue-bucle (fn[x] false)))))
+                    (swap! ptr-preposition (fn [p] (map->Preposition { :name (.name p) :facts (.facts p) :rule (map->AndRule { :rules @rules})})))
+                    @buffer)) 
+                        
 
 
+                    
 
      parse-database (fn
                        [database]
@@ -89,7 +118,10 @@
                               (swap! string parse-vars add-var))
 
                             (if (rule? @string)
-                              (parse-rule @string)
+                              (do
+                                (swap! string delete-rule-symbol)
+                                (swap! string parse-rule  @vars @prepositions preposition)
+                                (when (not (get-end @string)) (throw (Exception.)))
                               (do
                                   (if (get-end @string)
                                     (do 
@@ -101,9 +133,9 @@
                                         (swap! preposition (fn [x] 
                                                              (map->Preposition {:name (.name x)
                                                                                 :rule (.rule x)
-                                                                                :facts (conj (.facts x) @fact)})))
-                                        (swap! prepositions assoc (.name @preposition) @preposition)))
+                                                                                :facts (conj (.facts x) @fact)})))))
                                     (throw (Exception.)))))
+                                (swap! prepositions assoc (.name @preposition) @preposition)
                             (when (= @string "") (swap! continue-bucle (fn[x] false)))))
 
                          @prepositions))
@@ -123,7 +155,6 @@
      (try
        (do
          (swap! prepositions (fn [x] (parse-database database)))
-         (print @prepositions)
          (swap! consulta (fn [x] (parse-query query)))
          (bool (get @prepositions (get @consulta 0)) (get @consulta 1)))
        (catch Exception e nil))))
