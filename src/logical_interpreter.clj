@@ -1,7 +1,7 @@
 (ns logical-interpreter
   (:require [preposition :refer :all]
             [rule :refer :all]
-            [clojure.string :refer [split includes?]]
+            [clojure.string :refer [split includes? replace-first]]
             [bool :refer :all]
             [rule :refer :all]))
 
@@ -33,7 +33,11 @@
              token1 (atom nil)
              token2 (atom nil)
              split-tokens (fn [string pattern]
-                            (when (or (not (re-find (re-matcher pattern string))) (> (count (split string pattern)) 2)) (error))
+                            (when (or (not (re-find (re-matcher pattern string)))
+                                    (> (count (split string pattern)) 2)
+                                    (< (count (split string pattern)) 1))
+                                    (error))
+
                             (swap! token1 (fn [c] (get (split string pattern) 0)))
                             (swap! token2 (fn [c] (get (split string pattern) 1))))
                           
@@ -41,7 +45,9 @@
              set-name (fn [str-name]
                         (if (contains? @prepositions str-name)
                           (swap! preposition (fn [x] (get @prepositions str-name)))
-                          (swap! preposition (fn [x] (map->Preposition {:name str-name :facts #{} :rule nil})))))]
+                          (swap! preposition (fn [x] (map->Preposition {:name str-name :facts #{} :rule nil})))))
+             rule-part (do (when (> (count (split x #":-")) 2) (error))  (get (split x #":-") 1))
+             x  (get (split x #":-") 0)]
 
             (split-tokens x #"\(")
             (get-token @token1 pattern-name set-name error)
@@ -54,8 +60,29 @@
                                   (swap! vars assoc str-var [(swap! pos inc)])))]
                 (get-token y pattern-var set-variable error)))
             
-            (if (and (not (= token2 nil)) (includes? token2 ":-"))
-              (do (split-tokens x "") nil)
+            (if rule-part 
+              (do 
+                  (let
+                    [rules (atom [])]
+                    (doseq [x (split rule-part #"\)\s*,")]
+                      (let
+                        [q-name (atom nil)
+                         get-name (fn [str-name]
+                                    (when (not (contains? @prepositions str-name)) (error))
+                                    (swap! q-name (fn [x] str-name)))
+
+                         order (atom [])
+                         get-order (fn [str-name]
+                                     (when (not (contains? @vars str-name)) (error))
+                                     (swap! order conj (get (get @vars str-name) 0)))]
+
+                        (split-tokens x #"\(")
+                        (get-token @token1 pattern-name get-name error)
+                        (doseq [x (split (replace-first @token2  #"\)" " ") #",")] (get-token x pattern-name get-order error))
+                        (swap! rules conj (map->Rule {:preposition (get @prepositions @q-name) :order @order}))))
+                    (swap! preposition (fn [p] (map->Preposition {:name (.name p)
+                                                                  :rule (map->AndRule {:rules @rules})
+                                                                  :facts (.facts p)})))))
               (do  
                   (let
                     [fact (atom [])]
