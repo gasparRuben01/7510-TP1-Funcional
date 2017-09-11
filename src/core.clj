@@ -2,5 +2,6 @@
   (:require [logical-interpreter :refer :all]))
 
 (defn -main []
-  (evaluate-query "fact1(c1,c2,c3)." "fact1(c1,c2,c3)")
- (print 2))
+   (print (evaluate-query "  fact2(c1, c2, c3).
+fact2(c2, c3, c1)." "fact2   (c2,c3   ,c1)"))
+ )

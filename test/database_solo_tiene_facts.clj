@@ -17,7 +17,7 @@
 
 (deftest database-only-facts-test
   (testing "fact1(c1, c2, c3) deberia ser cierto"
-    (is (= (evaluate-query database-only-facts "fat1(c1, c2, c3)") true)))
+    (is (= (evaluate-query database-only-facts "fact1(c1, c2, c3)") true)))
   (testing "debe ignorar espacios en blanco, por lo que fact1  (  c1, c2,    c3   ), tambien debe ser cierto"
     (is (= (evaluate-query database-only-facts " fact1  (  c1, c2,    c3  )") true)))
   (testing "fact2(c8, c7, c4) , fact2(c4, c5, c7), fact3(c1, c8)  deben ser ciertos"

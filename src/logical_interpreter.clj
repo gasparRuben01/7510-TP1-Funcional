@@ -12,14 +12,14 @@
   (let 
     [prepositions (atom nil)
      consulta (atom nil)
-     pattern-name #"^\s*([^\(,.\s]+)\s*\("         
-     pattern-no-last-variable #"^\s*([^,\s\)]+)\s*,"
-     pattern-last-variable #"^\s*([^,\s\)]+)\s*\)"
+     pattern-name #"^\s*([^\(,\.\s]+)\s*\("         
+     pattern-no-last-variable #"^\s*([^,\s\)\.]+)\s*,"
+     pattern-last-variable #"^\s*([^,\s\)\.]+)\s*\)"
      pattern-rule? #"^\s*:-"
-     pattern-end #"^\s*.\s*"
+     pattern-end #"^\s*(\.)\s*"
      first-token (fn [pattern string]
                    (if (re-find (re-matcher pattern string))
-                     (get (re-find (re-matcher pattern string) 1))
+                     (get (re-find (re-matcher pattern string)) 1)
                      nil))
 
      delete-first-match (fn [pattern string] (replace-first string pattern ""))
@@ -34,7 +34,7 @@
      delete-last-var (fn [string] (delete-first-match pattern-last-variable string))
 
      get-end (fn [string] (first-token pattern-end string))
-     delete-end (fn [string] (first-token pattern-end string))
+     delete-end (fn [string] (delete-first-match pattern-end string))
 
      rule? (fn [string] (first-token pattern-rule? string))
      delete-rule-symbol (fn [string] (delete-first-match pattern-rule? string))
@@ -45,13 +45,13 @@
                   (let
                     [buffer (atom string)
                      var-name (atom nil)]
-                    (swap! var-name get-no-last-var @buffer)
+                    (swap! var-name (fn [x] (get-no-last-var @buffer)))
                     (while @var-name
                       (add-var @var-name)
                       (swap! buffer delete-no-last-var)
-                      (swap! var-name get-no-last-var @buffer))
+                      (swap! var-name (fn [x] (get-no-last-var @buffer))))
                     
-                    (swap! var-name get-last-var @buffer)
+                    (swap! var-name (fn [x] (get-last-var @buffer)))
                     (when (not @var-name) (throw (Exception.)))
                     (add-var @var-name)
                     (swap! buffer delete-last-var)
@@ -65,20 +65,18 @@
                        (let
                          [string (atom database)
                           prepositions (atom {})
-                          continue-bucle (atom true)
-                          vars (atom {})]
+                          continue-bucle (atom true)]
 
                          (while @continue-bucle
                           (let
                            [preposition (atom nil)
-                            prep-name (get-name @string)]
+                            prep-name (get-name @string)
+                            vars (atom {})]
 
-                            (print "----" prep-name) 
-
-                           (if (prep-name) 
+                           (if prep-name 
                              (if (contains? @prepositions prep-name)
                                (swap! preposition (fn [x] (get @prepositions prep-name)))
-                               (swap! preposition (fn [x] (map->Preposition { :name prep-name }))))
+                               (swap! preposition (fn [x] (map->Preposition { :name prep-name :facts #{}}))))
                              (throw (Exception.)))
                            (swap! string delete-name) 
 
@@ -113,20 +111,20 @@
      parse-query (fn [query]
                    (let 
                      [buffer (atom query)
-                      query-name (get-name buffer) 
+                      query-name (get-name @buffer) 
                       query-nupla (atom nil)
                       vars (atom [])
                       add-vars (fn [var-name] (swap! vars conj var-name))]
 
+                     (swap! buffer delete-name)
                      (if query-name
-                       (do
-                         (swap! buffer parse-vars add-vars)
-                         [@query-name @vars])
+                       (do (swap! buffer parse-vars add-vars) [query-name @vars])
                        (throw (Exception.)))))]
      (try
        (do
          (swap! prepositions (fn [x] (parse-database database)))
+         (print @prepositions)
          (swap! consulta (fn [x] (parse-query query)))
-         (bool (get prepositions (get consulta 0)) (get consulta 1)))
+         (bool (get @prepositions (get @consulta 0)) (get @consulta 1)))
        (catch Exception e nil))))
        
